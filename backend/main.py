@@ -1,6 +1,7 @@
 from typing import Dict, List, Set
 
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, col
 
 from db import init_db, get_session, engine
@@ -19,6 +20,17 @@ from models import (
 from security import hash_password, verify_password
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ConnectionManager:
