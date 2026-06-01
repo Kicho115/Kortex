@@ -23,7 +23,6 @@ pip install -r requirements.txt
 # Start the server (Running at: http://localhost:8000)
 uvicorn main:app --reload
 
-
 # ----------------------------------------------------
 # ⚛️ TERMINAL 2: FRONTEND (React + pnpm)
 # ----------------------------------------------------
