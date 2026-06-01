@@ -187,3 +187,47 @@ class EmbeddingsManager:
         except Exception as e:
             logger.error(f"Error listing collections: {e}")
             raise
+
+class DocumentProcessor:
+
+    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", " ", ""]
+        )
+        logger.info(f"Document processor initialized with chunk_size={chunk_size}, chunk_overlap={chunk_overlap}")
+
+    def load_pdf(self, file_path: str) -> List[Document]:
+
+        try:
+            loader = PyPDFLoader(file_path)
+            documents = loader.load()
+            chunks = self.text_splitter.split_documents(documents)
+            logger.info(f"PDF '{file_path}' loaded: {len(chunks)} chunks")
+            return chunks
+        except Exception as e:
+            logger.error(f"Error loading PDF: {e}")
+            raise
+
+    def load_text(self, file_path: str) -> List[Document]:
+
+        try:
+            loader = TextLoader(file_path)
+            documents = loader.load()
+            chunks = self.text_splitter.split_documents(documents)
+            logger.info(f"Text file '{file_path}' loaded: {len(chunks)} chunks")
+            return chunks
+        except Exception as e:
+            logger.error(f"Error loading text file: {e}")
+            raise
+
+    def load_document(self, file_path: str) -> List[Document]:
+
+        if file_path.endswith('.pdf'):
+            return self.load_pdf(file_path)
+        elif file_path.endswith('.txt'):
+            return self.load_text(file_path)
+        else:
+            raise ValueError(f"File type not supported: {file_path}")
