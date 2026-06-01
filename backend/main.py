@@ -2,8 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from db import init_db, get_session
-from models import User, UserCreate, UserRead
-from security import hash_password
+from models import User, UserCreate, UserRead, UserLogin
+from security import hash_password, verify_password
 
 app = FastAPI()
 
@@ -35,4 +35,19 @@ def create_user(
     session.add(user)
     session.commit()
     session.refresh(user)
+    return user
+
+
+@app.post("/login", response_model=UserRead)
+def login(
+    payload: UserLogin,
+    session: Session = Depends(get_session),
+):
+    user = session.exec(select(User).where(User.email == payload.email)).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
     return user

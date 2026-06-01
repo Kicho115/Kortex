@@ -22,3 +22,8 @@ class UserCreate(UserBase):
 class UserRead(UserBase):
     id: int
     created_at: datetime
+
+
+class UserLogin(SQLModel):
+    email: str
+    password: str
