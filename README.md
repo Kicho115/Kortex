@@ -2,6 +2,23 @@
 
 ## How to Run
 
+### Create a .env File
+Create a `.env` file in the `backend` directory with the following content:
+
+```env
+LLM_API_KEY=your-api-key
+LLM_API_URL=your-api-url
+LLM_MODEL=your-model
+```
+
+And create a `.env` file in the `frontend` directory with the following content:
+
+```env
+VITE_API_URL=http://your-backend-ip:8000
+VITE_WS_URL=ws://your-backend-ip:8000
+```
+
+### Start the Backend and Frontend
 ```bash
 # ----------------------------------------------------
 # 🐍 TERMINAL 1: BACKEND (FastAPI)
