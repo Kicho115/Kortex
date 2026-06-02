@@ -30,11 +30,15 @@ export default function App() {
         <Route
           path="/"
           element={
-            <Landing
-              user={user}
-              onLogin={() => setAuthMode("login")}
-              onRegister={() => setAuthMode("register")}
-            />
+            user ? (
+              <Navigate to="/home" replace />
+            ) : (
+              <Landing
+                user={user}
+                onLogin={() => setAuthMode("login")}
+                onRegister={() => setAuthMode("register")}
+              />
+            )
           }
         />
         <Route path="/home" element={<Home user={user} />} />
