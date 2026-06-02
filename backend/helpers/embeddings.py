@@ -8,7 +8,6 @@ import os
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 import chromadb
-from chromadb.config import Settings
 from langchain_openai import OpenAIEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -40,7 +39,7 @@ class EmbeddingsManager:
                 raise ValueError("OPENAI_API_KEY not configured in .env")
             self.embeddings = OpenAIEmbeddings(
                 api_key=api_key,
-                model="text-embedding-3-small"
+                model="text-embedding-3-small"  # Faster and more economical
             )
             logger.info("OpenAI embeddings initialized")
 
@@ -60,15 +59,9 @@ class EmbeddingsManager:
         # Create directory if it doesn't exist
         os.makedirs(self.persist_directory, exist_ok=True)
 
-        # Configure ChromaDB with persistence
-        settings = Settings(
-            chroma_db_impl="duckdb+parquet",
-            persist_directory=self.persist_directory,
-            anonymized_telemetry=False
-        )
-
-        self.client = chromadb.Client(settings)
-        logger.info(f"ChromaDB initialized in {self.persist_directory}")
+        # Initialize ChromaDB PersistentClient (new API)
+        self.client = chromadb.PersistentClient(path=self.persist_directory)
+        logger.info(f"ChromaDB initialized at {self.persist_directory}")
 
     def create_collection(self, collection_name: str, metadata: Optional[Dict[str, str]] = None) -> Any:
 
@@ -231,3 +224,121 @@ class DocumentProcessor:
             return self.load_text(file_path)
         else:
             raise ValueError(f"File type not supported: {file_path}")
+
+
+class MessageStore:
+
+    def __init__(self, embeddings_manager: EmbeddingsManager = None, provider: str = "openai"):
+
+        if embeddings_manager:
+            self.embeddings_manager = embeddings_manager
+        else:
+            self.embeddings_manager = EmbeddingsManager(provider=provider)
+        
+        logger.info("MessageStore initialized")
+
+    def add_message(self, chat_id: int, sender_id: int, sender_name: str, 
+                   content: str, message_id: int) -> Dict[str, Any]:
+
+        try:
+            # Create or get collection for this chat room
+            collection_name = f"chat_{chat_id}"
+            collection = self.embeddings_manager.get_or_create_collection(collection_name)
+
+            # Create document for this message
+            metadata = {
+                "chat_id": str(chat_id),
+                "sender_id": str(sender_id),
+                "sender_name": sender_name,
+                "message_id": str(message_id)
+            }
+
+            # Add message to collection with embeddings
+            collection.add(
+                documents=[content],
+                metadatas=[metadata],
+                ids=[f"message_{message_id}"]
+            )
+
+            logger.info(f"Message {message_id} from user {sender_name} added to chat {chat_id}")
+            return {"status": "success", "message_id": message_id}
+
+        except Exception as e:
+            logger.error(f"Error adding message to vector store: {e}")
+            raise
+
+    def search_in_chat(self, chat_id: int, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+
+        try:
+            collection_name = f"chat_{chat_id}"
+            results = self.embeddings_manager.search(collection_name, query, n_results)
+            
+            logger.info(f"Found {len(results)} messages in chat {chat_id} matching query")
+            return results
+
+        except Exception as e:
+            logger.error(f"Error searching messages in chat {chat_id}: {e}")
+            raise
+
+    def search_all_chats(self, query: str, n_results: int = 10) -> Dict[int, List[Dict[str, Any]]]:
+
+        try:
+            all_results = {}
+            collections = self.embeddings_manager.list_collections()
+
+            # Filter only collections that are chat rooms
+            chat_collections = [c for c in collections if c.startswith("chat_")]
+
+            for collection_name in chat_collections:
+                try:
+                    chat_id = int(collection_name.replace("chat_", ""))
+                    results = self.search_in_chat(chat_id, query, n_results)
+                    if results:
+                        all_results[chat_id] = results
+                except (ValueError, Exception) as e:
+                    logger.warning(f"Error searching in {collection_name}: {e}")
+
+            logger.info(f"Global search found results in {len(all_results)} chat rooms")
+            return all_results
+
+        except Exception as e:
+            logger.error(f"Error during global message search: {e}")
+            raise
+
+    def get_chat_messages_context(self, chat_id: int, limit: int = 20) -> str:
+
+        try:
+            collection_name = f"chat_{chat_id}"
+            collection = self.embeddings_manager.client.get_collection(name=collection_name)
+            
+            # Get all messages with their metadata (limited to recent ones)
+            results = collection.get(limit=limit, order_by="data")
+            
+            context_parts = []
+            if results and results['documents']:
+                for i, doc in enumerate(results['documents']):
+                    metadata = results['metadatas'][i] if results['metadatas'] else {}
+                    sender_name = metadata.get('sender_name', 'Unknown')
+                    context_parts.append(f"{sender_name}: {doc}")
+            
+            context = "\n".join(context_parts)
+            logger.info(f"Retrieved context from chat {chat_id} with {len(context_parts)} messages")
+            return context
+
+        except Exception as e:
+            logger.error(f"Error getting chat context: {e}")
+            return ""
+
+    def delete_message(self, chat_id: int, message_id: int) -> Dict[str, Any]:
+
+        try:
+            collection_name = f"chat_{chat_id}"
+            collection = self.embeddings_manager.client.get_collection(name=collection_name)
+            collection.delete(ids=[f"message_{message_id}"])
+
+            logger.info(f"Message {message_id} deleted from chat {chat_id}")
+            return {"status": "success", "message": f"Message {message_id} deleted"}
+
+        except Exception as e:
+            logger.error(f"Error deleting message: {e}")
+            raise

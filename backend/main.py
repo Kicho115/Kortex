@@ -25,6 +25,7 @@ from models import (
 )
 from security import hash_password, verify_password
 from sqlmodel import Session, col, select
+from helpers.embeddings import MessageStore
 
 app = FastAPI()
 
@@ -35,6 +36,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize MessageStore for vector operations
+message_store = MessageStore(provider="openai")
 
 
 class ConnectionManager:
@@ -192,6 +196,13 @@ async def send_message(
             status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
         )
 
+    # Get sender information
+    sender = session.get(User, payload.sender_id)
+    if not sender:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Sender not found"
+        )
+
     message = Message(
         chat_id=chat_id,
         sender_id=payload.sender_id,
@@ -200,6 +211,20 @@ async def send_message(
     session.add(message)
     session.commit()
     session.refresh(message)
+
+    # Add message to vector store
+    try:
+        await message_store.add_message(
+            chat_id=chat_id,
+            sender_id=sender.id,
+            sender_name=sender.name,
+            content=payload.content,
+            message_id=message.id,
+        )
+    except Exception as e:
+        # Log error but don't fail the request
+        import logging
+        logging.error(f"Error adding message to vector store: {e}")
 
     outbound = MessageRead.model_validate(message).model_dump()
     await manager.broadcast(chat_id, outbound)
@@ -223,6 +248,48 @@ def list_messages(
         .order_by(col(Message.created_at))
     ).all()
     return messages
+
+
+@app.get("/chats/{chat_id}/search")
+def search_chat_messages(
+    chat_id: int,
+    query: str,
+    n_results: int = 5,
+):
+
+    try:
+        results = message_store.search_in_chat(chat_id, query, n_results)
+        return {
+            "chat_id": chat_id,
+            "query": query,
+            "results": results,
+            "count": len(results),
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error searching messages: {str(e)}"
+        )
+
+
+@app.get("/search")
+def global_search(
+    query: str,
+    n_results: int = 10,
+):
+
+    try:
+        results = message_store.search_all_chats(query, n_results)
+        return {
+            "query": query,
+            "results": results,
+            "total_chats": len(results),
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error performing global search: {str(e)}"
+        )
 
 
 @app.websocket("/ws/chats/{chat_id}")
@@ -257,6 +324,20 @@ async def chat_socket(websocket: WebSocket, chat_id: int) -> None:
                 session.commit()
                 session.refresh(message)
                 outbound = MessageRead.model_validate(message).model_dump()
+
+                # Add message to vector store
+                try:
+                    await message_store.add_message(
+                        chat_id=chat_id,
+                        sender_id=sender.id,
+                        sender_name=sender.name,
+                        content=payload.content,
+                        message_id=message.id,
+                    )
+                except Exception as e:
+                    # Log error but don't fail the connection
+                    import logging
+                    logging.error(f"Error adding message to vector store: {e}")
 
             await manager.broadcast(chat_id, outbound)
     except WebSocketDisconnect:
