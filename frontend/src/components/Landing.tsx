@@ -1,7 +1,7 @@
-import { Link } from 'react-router-dom'
-import type { UserRead } from '../types/user'
-import KortexIcon from './icons/KortexIcon'
-import './Landing.css'
+import { Link } from "react-router-dom";
+import type { UserRead } from "../types/user";
+import KortexIcon from "./icons/KortexIcon";
+import "./Landing.css";
 
 function ArrowIcon() {
   return (
@@ -14,20 +14,24 @@ function ArrowIcon() {
         strokeLinejoin="round"
       />
     </svg>
-  )
+  );
 }
 
 interface LandingProps {
-  user: UserRead | null
-  onLogin: () => void
-  onRegister: () => void
+  user: UserRead | null;
+  onLogin: () => void;
+  onRegister: () => void;
 }
 
 export default function Landing({ user, onLogin, onRegister }: LandingProps) {
   return (
     <section className="landing" aria-label="Inicio">
       <header className="landing__header">
-        <Link to="/home" className="landing__brand" aria-label="Ir al chat de Kortex">
+        <Link
+          to="/home"
+          className="landing__brand"
+          aria-label="Ir al chat de Kortex"
+        >
           <span className="landing__brand-pill">
             <KortexIcon className="landing__logo-icon" />
             <span>Kortex</span>
@@ -67,5 +71,5 @@ export default function Landing({ user, onLogin, onRegister }: LandingProps) {
 
       <div className="landing__glow" aria-hidden="true" />
     </section>
-  )
+  );
 }

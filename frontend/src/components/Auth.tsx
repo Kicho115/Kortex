@@ -1,40 +1,40 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
-import { loginUser, registerUser } from '../api/auth'
-import type { UserRead } from '../types/user'
-import './Auth.css'
+import { useState } from "react";
+import type { FormEvent } from "react";
+import { loginUser, registerUser } from "../api/auth";
+import type { UserRead } from "../types/user";
+import "./Auth.css";
 
-type AuthMode = 'login' | 'register'
+type AuthMode = "login" | "register";
 
 interface AuthProps {
-  initialMode: AuthMode
-  onBack: () => void
-  onSuccess: (user: UserRead) => void
+  initialMode: AuthMode;
+  onBack: () => void;
+  onSuccess: (user: UserRead) => void;
 }
 
 export default function Auth({ initialMode, onBack, onSuccess }: AuthProps) {
-  const [mode, setMode] = useState<AuthMode>(initialMode)
-  const [email, setEmail] = useState('')
-  const [name, setName] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setLoading(true)
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
 
     try {
       const user =
-        mode === 'login'
+        mode === "login"
           ? await loginUser({ email, password })
-          : await registerUser({ email, name, password })
-      onSuccess(user)
+          : await registerUser({ email, name, password });
+      onSuccess(user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ocurrió un error')
+      setError(err instanceof Error ? err.message : "Ocurrió un error");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -51,20 +51,22 @@ export default function Auth({ initialMode, onBack, onSuccess }: AuthProps) {
       <main className="auth__main">
         <h1 className="auth__title">Inicio de sesión</h1>
         <p className="auth__subtitle">
-          {mode === 'login'
-            ? 'Accede a tu cuenta de Kortex'
-            : 'Crea tu cuenta y prueba Kortex gratis'}
+          {mode === "login"
+            ? "Accede a tu cuenta de Kortex"
+            : "Crea tu cuenta y prueba Kortex gratis"}
         </p>
 
         <div className="auth__tabs" role="tablist">
           <button
             type="button"
             role="tab"
-            aria-selected={mode === 'login'}
-            className={mode === 'login' ? 'auth__tab auth__tab--active' : 'auth__tab'}
+            aria-selected={mode === "login"}
+            className={
+              mode === "login" ? "auth__tab auth__tab--active" : "auth__tab"
+            }
             onClick={() => {
-              setMode('login')
-              setError(null)
+              setMode("login");
+              setError(null);
             }}
           >
             Iniciar sesión
@@ -72,13 +74,13 @@ export default function Auth({ initialMode, onBack, onSuccess }: AuthProps) {
           <button
             type="button"
             role="tab"
-            aria-selected={mode === 'register'}
+            aria-selected={mode === "register"}
             className={
-              mode === 'register' ? 'auth__tab auth__tab--active' : 'auth__tab'
+              mode === "register" ? "auth__tab auth__tab--active" : "auth__tab"
             }
             onClick={() => {
-              setMode('register')
-              setError(null)
+              setMode("register");
+              setError(null);
             }}
           >
             Registrarse
@@ -86,7 +88,7 @@ export default function Auth({ initialMode, onBack, onSuccess }: AuthProps) {
         </div>
 
         <form className="auth__form" onSubmit={handleSubmit}>
-          {mode === 'register' && (
+          {mode === "register" && (
             <label className="auth__field">
               <span>Nombre</span>
               <input
@@ -125,7 +127,7 @@ export default function Auth({ initialMode, onBack, onSuccess }: AuthProps) {
               required
               minLength={6}
               autoComplete={
-                mode === 'login' ? 'current-password' : 'new-password'
+                mode === "login" ? "current-password" : "new-password"
               }
             />
           </label>
@@ -138,13 +140,13 @@ export default function Auth({ initialMode, onBack, onSuccess }: AuthProps) {
 
           <button type="submit" className="auth__submit" disabled={loading}>
             {loading
-              ? 'Cargando…'
-              : mode === 'login'
-                ? 'Entrar'
-                : 'Crear cuenta'}
+              ? "Cargando…"
+              : mode === "login"
+                ? "Entrar"
+                : "Crear cuenta"}
           </button>
         </form>
       </main>
     </section>
-  )
+  );
 }

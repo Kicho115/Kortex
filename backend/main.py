@@ -1,32 +1,36 @@
 from typing import Dict, List, Set
 
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from db import engine, get_session, init_db
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session, select, col
-
-from db import init_db, get_session, engine
 from models import (
-    User,
-    UserCreate,
-    UserRead,
-    UserLogin,
     Chat,
     ChatCreate,
     ChatRead,
     Message,
     MessageCreate,
     MessageRead,
+    User,
+    UserCreate,
+    UserLogin,
+    UserRead,
 )
 from security import hash_password, verify_password
+from sqlmodel import Session, col, select
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,11 +54,36 @@ class ConnectionManager:
             self.active.pop(chat_id, None)
 
     async def broadcast(self, chat_id: int, message: dict) -> None:
+        payload = jsonable_encoder(message)
         for websocket in list(self.active.get(chat_id, set())):
-            await websocket.send_json(message)
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                self.disconnect(chat_id, websocket)
 
 
 manager = ConnectionManager()
+
+
+def to_chat_read(chat: Chat) -> ChatRead:
+    if chat.id is None:
+        raise HTTPException(status_code=500, detail="Chat ID missing")
+    return ChatRead(
+        id=chat.id,
+        name=chat.name,
+        created_at=chat.created_at,
+    )
+
+
+def to_user_read(user: User) -> UserRead:
+    if user.id is None:
+        raise HTTPException(status_code=500, detail="User ID missing")
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        created_at=user.created_at,
+    )
 
 
 @app.on_event("startup")
@@ -102,6 +131,19 @@ def login(
     return user
 
 
+@app.get("/users/{user_id}", response_model=UserRead)
+def get_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return to_user_read(user)
+
+
 @app.post("/chats", response_model=ChatRead, status_code=status.HTTP_201_CREATED)
 def create_chat(
     payload: ChatCreate,
@@ -111,12 +153,14 @@ def create_chat(
     session.add(chat)
     session.commit()
     session.refresh(chat)
-    
-    return ChatRead(
-        id=chat.id,
-        name=chat.name,
-        created_at=chat.created_at,
-    )
+
+    return to_chat_read(chat)
+
+
+@app.get("/chats", response_model=List[ChatRead])
+def list_chats(session: Session = Depends(get_session)):
+    chats = session.exec(select(Chat).order_by(col(Chat.created_at))).all()
+    return [to_chat_read(chat) for chat in chats]
 
 
 @app.get("/chats/{chat_id}", response_model=ChatRead)
@@ -126,12 +170,10 @@ def get_chat(
 ):
     chat = session.get(Chat, chat_id)
     if not chat:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
-    return ChatRead(
-        id=chat.id,
-        name=chat.name,
-        created_at=chat.created_at,
-    )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
+        )
+    return to_chat_read(chat)
 
 
 @app.post(
@@ -139,14 +181,16 @@ def get_chat(
     response_model=MessageRead,
     status_code=status.HTTP_201_CREATED,
 )
-def send_message(
+async def send_message(
     chat_id: int,
     payload: MessageCreate,
     session: Session = Depends(get_session),
 ):
     chat = session.get(Chat, chat_id)
     if not chat:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
+        )
 
     message = Message(
         chat_id=chat_id,
@@ -156,6 +200,9 @@ def send_message(
     session.add(message)
     session.commit()
     session.refresh(message)
+
+    outbound = MessageRead.model_validate(message).model_dump()
+    await manager.broadcast(chat_id, outbound)
     return message
 
 
@@ -166,7 +213,9 @@ def list_messages(
 ):
     chat = session.get(Chat, chat_id)
     if not chat:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
+        )
 
     messages = session.exec(
         select(Message)

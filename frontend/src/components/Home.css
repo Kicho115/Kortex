@@ -82,6 +82,7 @@
   background: transparent;
   color: #9ca3af;
   cursor: pointer;
+  text-decoration: none;
   transition:
     background 0.2s ease,
     color 0.2s ease;

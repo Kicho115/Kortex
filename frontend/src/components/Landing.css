@@ -92,7 +92,9 @@
   font-size: clamp(1rem, 2vw, 1.15rem);
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .landing__login:hover {
@@ -181,7 +183,9 @@
   box-shadow:
     0 4px 32px rgba(255, 140, 0, 0.45),
     0 0 0 1px rgba(255, 180, 80, 0.2) inset;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .landing__cta:hover {
@@ -227,7 +231,7 @@
 }
 
 .landing__glow::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 10% 5% -5%;
   background: radial-gradient(

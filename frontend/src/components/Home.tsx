@@ -1,23 +1,28 @@
-import { useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import DocumentsPanel, { type UploadedDocument } from './DocumentsPanel'
-import KortexIcon from './icons/KortexIcon'
-import './Home.css'
+import { useMemo, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
+import { Link } from "react-router-dom";
+import DocumentsPanel, { type UploadedDocument } from "./DocumentsPanel";
+import KortexIcon from "./icons/KortexIcon";
+import type { UserRead } from "../types/user";
+import "./Home.css";
 
-type HomeView = 'chat' | 'documents'
+type HomeView = "chat" | "documents";
 
 interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface HomeProps {
+  user: UserRead | null;
 }
 
 function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Buenos días'
-  if (hour < 19) return 'Buenas tardes'
-  return 'Buenas noches'
+  const hour = new Date().getHours();
+  if (hour < 12) return "Buenos días";
+  if (hour < 19) return "Buenas tardes";
+  return "Buenas noches";
 }
 
 function SidebarIcon({
@@ -26,110 +31,143 @@ function SidebarIcon({
   label,
   onClick,
 }: {
-  children: ReactNode
-  active?: boolean
-  label: string
-  onClick?: () => void
+  children: ReactNode;
+  active?: boolean;
+  label: string;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
-      className={active ? 'home__sidebar-btn home__sidebar-btn--active' : 'home__sidebar-btn'}
+      className={
+        active
+          ? "home__sidebar-btn home__sidebar-btn--active"
+          : "home__sidebar-btn"
+      }
       aria-label={label}
-      aria-current={active ? 'page' : undefined}
+      aria-current={active ? "page" : undefined}
       title={label}
       onClick={onClick}
     >
       {children}
     </button>
-  )
+  );
 }
 
-export default function Home() {
-  const [view, setView] = useState<HomeView>('chat')
-  const [documents, setDocuments] = useState<UploadedDocument[]>([])
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [isThinking, setIsThinking] = useState(false)
-  const messagesEndRef = useRef<HTMLLIElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const greeting = useMemo(() => getGreeting(), [])
-  const hasMessages = messages.length > 0
+function SidebarLink({
+  children,
+  label,
+  to,
+}: {
+  children: ReactNode;
+  label: string;
+  to: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="home__sidebar-btn"
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </Link>
+  );
+}
+
+export default function Home({ user }: HomeProps) {
+  const [view, setView] = useState<HomeView>("chat");
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const messagesEndRef = useRef<HTMLLIElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const greeting = useMemo(() => getGreeting(), []);
+  const hasMessages = messages.length > 0;
 
   function scrollToBottom() {
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    })
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
   }
 
   async function sendMessage(text: string) {
-    const trimmed = text.trim()
-    if (!trimmed || isThinking) return
+    const trimmed = text.trim();
+    if (!trimmed || isThinking) return;
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
-      role: 'user',
+      role: "user",
       content: trimmed,
-    }
+    };
 
-    setMessages((prev) => [...prev, userMessage])
-    setInput('')
-    setIsThinking(true)
-    scrollToBottom()
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsThinking(true);
+    scrollToBottom();
 
-    await new Promise((resolve) => setTimeout(resolve, 700))
+    await new Promise((resolve) => setTimeout(resolve, 700));
 
     const assistantMessage: Message = {
       id: crypto.randomUUID(),
-      role: 'assistant',
+      role: "assistant",
       content:
         documents.length > 0
           ? `Tienes ${documents.length} documento(s) cargado(s). Pronto Kortex usará ese contexto para responder con precisión.`
-          : 'Gracias por tu mensaje. Carga documentos en la sección Documentos para obtener respuestas con contexto de tu empresa.',
-    }
+          : "Gracias por tu mensaje. Carga documentos en la sección Documentos para obtener respuestas con contexto de tu empresa.",
+    };
 
-    setMessages((prev) => [...prev, assistantMessage])
-    setIsThinking(false)
-    scrollToBottom()
+    setMessages((prev) => [...prev, assistantMessage]);
+    setIsThinking(false);
+    scrollToBottom();
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void sendMessage(input)
+    event.preventDefault();
+    void sendMessage(input);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      void sendMessage(input)
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage(input);
     }
   }
 
   function handleQuickAttach(event: ChangeEvent<HTMLInputElement>) {
-    const files = event.target.files
-    if (!files?.length) return
+    const files = event.target.files;
+    if (!files?.length) return;
 
-    const newDocs: UploadedDocument[] = []
+    const newDocs: UploadedDocument[] = [];
     for (const file of Array.from(files)) {
-      const name = file.name.toLowerCase()
-      if (!['.csv', '.txt', '.pdf'].some((ext) => name.endsWith(ext))) continue
-      if (documents.some((d) => d.file.name === file.name && d.file.size === file.size)) {
-        continue
+      const name = file.name.toLowerCase();
+      if (![".csv", ".txt", ".pdf"].some((ext) => name.endsWith(ext))) continue;
+      if (
+        documents.some(
+          (d) => d.file.name === file.name && d.file.size === file.size,
+        )
+      ) {
+        continue;
       }
-      newDocs.push({ id: crypto.randomUUID(), file, status: 'ready' })
+      newDocs.push({ id: crypto.randomUUID(), file, status: "ready" });
     }
 
     if (newDocs.length > 0) {
-      setDocuments((prev) => [...prev, ...newDocs])
-      setView('documents')
+      setDocuments((prev) => [...prev, ...newDocs]);
+      setView("documents");
     }
-    event.target.value = ''
+    event.target.value = "";
   }
 
   return (
     <div className="home">
       <aside className="home__sidebar" aria-label="Navegación">
-        <Link to="/home" className="home__sidebar-logo" aria-label="Kortex inicio">
+        <Link
+          to="/home"
+          className="home__sidebar-logo"
+          aria-label="Kortex inicio"
+        >
           <span className="home__sidebar-logo-mark">
             <KortexIcon />
           </span>
@@ -138,8 +176,8 @@ export default function Home() {
         <nav className="home__sidebar-nav">
           <SidebarIcon
             label="Chat"
-            active={view === 'chat'}
-            onClick={() => setView('chat')}
+            active={view === "chat"}
+            onClick={() => setView("chat")}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
@@ -151,9 +189,28 @@ export default function Home() {
               />
             </svg>
           </SidebarIcon>
+          {user && (
+            <SidebarLink label="Chats" to="/chats">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M5 6h10a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H9l-4 3v-3H5a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3Z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </SidebarLink>
+          )}
           <SidebarIcon label="Historial">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6" />
+              <circle
+                cx="12"
+                cy="12"
+                r="8"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
               <path
                 d="M12 8v4l2.5 2.5"
                 stroke="currentColor"
@@ -164,8 +221,8 @@ export default function Home() {
           </SidebarIcon>
           <SidebarIcon
             label="Documentos"
-            active={view === 'documents'}
-            onClick={() => setView('documents')}
+            active={view === "documents"}
+            onClick={() => setView("documents")}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
@@ -179,7 +236,14 @@ export default function Home() {
           </SidebarIcon>
           <SidebarIcon label="Conocimiento">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" strokeWidth="1.6" />
+              <ellipse
+                cx="12"
+                cy="6"
+                rx="7"
+                ry="3"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
               <path
                 d="M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6"
                 stroke="currentColor"
@@ -192,7 +256,13 @@ export default function Home() {
         <div className="home__sidebar-footer">
           <SidebarIcon label="Ajustes">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+              <circle
+                cx="12"
+                cy="12"
+                r="3"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
               <path
                 d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
                 stroke="currentColor"
@@ -213,15 +283,15 @@ export default function Home() {
             </span>
             <span className="home__brand-name">Kortex</span>
           </Link>
-          {view === 'documents' && (
+          {view === "documents" && (
             <span className="home__header-badge">Documentos</span>
           )}
         </header>
 
         <div
-          className={`home__content ${view === 'chat' && hasMessages ? 'home__content--chat' : ''} ${view === 'documents' ? 'home__content--docs' : ''}`}
+          className={`home__content ${view === "chat" && hasMessages ? "home__content--chat" : ""} ${view === "documents" ? "home__content--docs" : ""}`}
         >
-          {view === 'documents' ? (
+          {view === "documents" ? (
             <DocumentsPanel
               documents={documents}
               onDocumentsChange={setDocuments}
@@ -247,9 +317,9 @@ export default function Home() {
                 <li
                   key={message.id}
                   className={
-                    message.role === 'user'
-                      ? 'home__message home__message--user'
-                      : 'home__message home__message--assistant'
+                    message.role === "user"
+                      ? "home__message home__message--user"
+                      : "home__message home__message--assistant"
                   }
                 >
                   <div className="home__message-bubble">{message.content}</div>
@@ -269,7 +339,7 @@ export default function Home() {
           )}
         </div>
 
-        {view === 'chat' && (
+        {view === "chat" && (
           <div className="home__composer-wrap">
             <form className="home__composer" onSubmit={handleSubmit}>
               <div className="home__composer-top">
@@ -326,7 +396,9 @@ export default function Home() {
                   <span>Adjuntar</span>
                   <span className="home__attach-hint">CSV, TXT o PDF</span>
                   {documents.length > 0 && (
-                    <span className="home__attach-count">{documents.length}</span>
+                    <span className="home__attach-count">
+                      {documents.length}
+                    </span>
                   )}
                 </button>
                 <button
@@ -351,5 +423,5 @@ export default function Home() {
         )}
       </div>
     </div>
-  )
+  );
 }
