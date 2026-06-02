@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Literal, Optional
 
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
 
 
 class UserBase(SQLModel):
@@ -64,3 +64,16 @@ class MessageRead(SQLModel):
     sender_id: int
     content: str
     created_at: datetime
+
+
+class LLMMessage(SQLModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class LLMChatRequest(SQLModel):
+    messages: List[LLMMessage]
+
+
+class LLMChatResponse(SQLModel):
+    message: LLMMessage

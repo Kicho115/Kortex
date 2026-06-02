@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import DocumentsPanel, { type UploadedDocument } from "./DocumentsPanel";
 import KortexIcon from "./icons/KortexIcon";
+import { chatWithLlm, type LLMMessage } from "../api/llm";
 import type { UserRead } from "../types/user";
 import "./Home.css";
 
@@ -102,25 +103,38 @@ export default function Home({ user }: HomeProps) {
       content: trimmed,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput("");
     setIsThinking(true);
     scrollToBottom();
 
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    try {
+      const history: LLMMessage[] = nextMessages
+        .slice(-20)
+        .map((message) => ({ role: message.role, content: message.content }));
 
-    const assistantMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content:
-        documents.length > 0
-          ? `Tienes ${documents.length} documento(s) cargado(s). Pronto Kortex usará ese contexto para responder con precisión.`
-          : "Gracias por tu mensaje. Carga documentos en la sección Documentos para obtener respuestas con contexto de tu empresa.",
-    };
-
-    setMessages((prev) => [...prev, assistantMessage]);
-    setIsThinking(false);
-    scrollToBottom();
+      const assistant = await chatWithLlm(history);
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: assistant.content,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (err) {
+      const fallback: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          err instanceof Error
+            ? `No se pudo obtener respuesta: ${err.message}`
+            : "No se pudo obtener respuesta.",
+      };
+      setMessages((prev) => [...prev, fallback]);
+    } finally {
+      setIsThinking(false);
+      scrollToBottom();
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

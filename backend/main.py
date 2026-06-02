@@ -1,6 +1,8 @@
+import os
 from typing import Dict, List, Set
 
 from db import engine, get_session, init_db
+from dotenv import load_dotenv
 from fastapi import (
     Depends,
     FastAPI,
@@ -11,10 +13,14 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from helpers.embeddings import MessageStore
 from models import (
     Chat,
     ChatCreate,
     ChatRead,
+    LLMChatRequest,
+    LLMChatResponse,
+    LLMMessage,
     Message,
     MessageCreate,
     MessageRead,
@@ -23,9 +29,11 @@ from models import (
     UserLogin,
     UserRead,
 )
+from openai import OpenAI
 from security import hash_password, verify_password
 from sqlmodel import Session, col, select
-from helpers.embeddings import MessageStore
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -98,6 +106,37 @@ def on_startup() -> None:
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
+
+
+@app.post("/llm/chat", response_model=LLMChatResponse)
+async def llm_chat(payload: LLMChatRequest):
+    if not payload.messages:
+        raise HTTPException(status_code=400, detail="Messages are required")
+
+    api_key = os.getenv("LLM_API_KEY")
+    api_url = os.getenv("LLM_API_URL")
+    model = os.getenv("LLM_MODEL")
+
+    if not api_key:
+        raise HTTPException(status_code=500, detail="LLM_API_KEY is not configured")
+    if not model:
+        raise HTTPException(status_code=500, detail="LLM_MODEL is not configured")
+
+    client = OpenAI(api_key=api_key, base_url=api_url or None)
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": message.role, "content": message.content}
+                for message in payload.messages
+            ],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}")
+
+    content = response.choices[0].message.content or ""
+    return LLMChatResponse(message=LLMMessage(role="assistant", content=content))
 
 
 @app.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -224,6 +263,7 @@ async def send_message(
     except Exception as e:
         # Log error but don't fail the request
         import logging
+
         logging.error(f"Error adding message to vector store: {e}")
 
     outbound = MessageRead.model_validate(message).model_dump()
@@ -267,8 +307,7 @@ def search_chat_messages(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=400,
-            detail=f"Error searching messages: {str(e)}"
+            status_code=400, detail=f"Error searching messages: {str(e)}"
         )
 
 
@@ -287,8 +326,7 @@ def global_search(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=400,
-            detail=f"Error performing global search: {str(e)}"
+            status_code=400, detail=f"Error performing global search: {str(e)}"
         )
 
 
@@ -337,6 +375,7 @@ async def chat_socket(websocket: WebSocket, chat_id: int) -> None:
                 except Exception as e:
                     # Log error but don't fail the connection
                     import logging
+
                     logging.error(f"Error adding message to vector store: {e}")
 
             await manager.broadcast(chat_id, outbound)
