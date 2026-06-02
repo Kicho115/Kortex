@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Dict, List, Set
 
 from db import engine, get_session, init_db
@@ -45,8 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize MessageStore for vector operations
-message_store = MessageStore(provider="openai")
+message_store = MessageStore(provider="local")
 
 
 class ConnectionManager:
@@ -105,32 +105,63 @@ def on_startup() -> None:
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Kortex API is running"}
 
 
 @app.post("/llm/chat", response_model=LLMChatResponse)
-async def llm_chat(payload: LLMChatRequest):
+def ask_global_assistant(payload: LLMChatRequest):
     if not payload.messages:
         raise HTTPException(status_code=400, detail="Messages are required")
+
+    current_query = payload.messages[-1].content
+    chat_history = payload.messages[:-1]
+
+    search_results = message_store.search_all_chats(current_query, n_results=10)
+
+    context_str = ""
+    for chat_id, results in search_results.items():
+        for res in results:
+            meta = res["metadata"]
+            sender = meta.get("sender_name", "Desconocido")
+            text = res["content"]
+            context_str += f"[Chat ID: {chat_id}] {sender} dijo: {text}\n"
+
+    if not context_str:
+        context_str = "No hay información relevante en el historial de los chats."
+
+    system_prompt = f"""Eres el asistente inteligente corporativo de Kortex. 
+Tu trabajo es responder a la pregunta del usuario utilizando unicamente la siguiente información extraída del historial de mensajes de los empleados.
+Si la respuesta no está en el contexto, di claramente "No encontré información sobre esto en los historiales de chat." NO inventes respuestas ni asumas información externa.
+
+Regla estrica de citacion: 
+Al final de tu respuesta, debes incluir siempre la fuente exacta con este formato:
+(Fuente: Mensaje de [Usuario] en el Chat [ID])
+
+Contexto recuperado de la base de datos:
+{context_str}
+"""
 
     api_key = os.getenv("LLM_API_KEY")
     api_url = os.getenv("LLM_API_URL")
     model = os.getenv("LLM_MODEL")
 
-    if not api_key:
-        raise HTTPException(status_code=500, detail="LLM_API_KEY is not configured")
-    if not model:
-        raise HTTPException(status_code=500, detail="LLM_MODEL is not configured")
+    if not api_key or not model:
+        raise HTTPException(status_code=500, detail="LLM configuration missing in .env")
 
     client = OpenAI(api_key=api_key, base_url=api_url or None)
+
+    final_messages = [{"role": "system", "content": system_prompt}]
+
+    for msg in chat_history:
+        final_messages.append({"role": msg.role, "content": msg.content})
+
+    final_messages.append({"role": "user", "content": current_query})
 
     try:
         response = client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": message.role, "content": message.content}
-                for message in payload.messages
-            ],
+            messages=final_messages,
+            temperature=0.2
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}")
@@ -141,8 +172,8 @@ async def llm_chat(payload: LLMChatRequest):
 
 @app.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
-    payload: UserCreate,
-    session: Session = Depends(get_session),
+        payload: UserCreate,
+        session: Session = Depends(get_session),
 ):
     existing = session.exec(select(User).where(User.email == payload.email)).first()
     if existing:
@@ -161,8 +192,8 @@ def create_user(
 
 @app.post("/login", response_model=UserRead)
 def login(
-    payload: UserLogin,
-    session: Session = Depends(get_session),
+        payload: UserLogin,
+        session: Session = Depends(get_session),
 ):
     user = session.exec(select(User).where(User.email == payload.email)).first()
     if not user or not verify_password(payload.password, user.hashed_password):
@@ -176,8 +207,8 @@ def login(
 
 @app.get("/users/{user_id}", response_model=UserRead)
 def get_user(
-    user_id: int,
-    session: Session = Depends(get_session),
+        user_id: int,
+        session: Session = Depends(get_session),
 ):
     user = session.get(User, user_id)
     if not user:
@@ -189,8 +220,8 @@ def get_user(
 
 @app.post("/chats", response_model=ChatRead, status_code=status.HTTP_201_CREATED)
 def create_chat(
-    payload: ChatCreate,
-    session: Session = Depends(get_session),
+        payload: ChatCreate,
+        session: Session = Depends(get_session),
 ):
     chat = Chat(name=payload.name)
     session.add(chat)
@@ -208,8 +239,8 @@ def list_chats(session: Session = Depends(get_session)):
 
 @app.get("/chats/{chat_id}", response_model=ChatRead)
 def get_chat(
-    chat_id: int,
-    session: Session = Depends(get_session),
+        chat_id: int,
+        session: Session = Depends(get_session),
 ):
     chat = session.get(Chat, chat_id)
     if not chat:
@@ -225,9 +256,9 @@ def get_chat(
     status_code=status.HTTP_201_CREATED,
 )
 async def send_message(
-    chat_id: int,
-    payload: MessageCreate,
-    session: Session = Depends(get_session),
+        chat_id: int,
+        payload: MessageCreate,
+        session: Session = Depends(get_session),
 ):
     chat = session.get(Chat, chat_id)
     if not chat:
@@ -235,7 +266,6 @@ async def send_message(
             status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
         )
 
-    # Get sender information
     sender = session.get(User, payload.sender_id)
     if not sender:
         raise HTTPException(
@@ -251,7 +281,6 @@ async def send_message(
     session.commit()
     session.refresh(message)
 
-    # Add message to vector store
     try:
         await message_store.add_message(
             chat_id=chat_id,
@@ -261,9 +290,6 @@ async def send_message(
             message_id=message.id,
         )
     except Exception as e:
-        # Log error but don't fail the request
-        import logging
-
         logging.error(f"Error adding message to vector store: {e}")
 
     outbound = MessageRead.model_validate(message).model_dump()
@@ -273,8 +299,8 @@ async def send_message(
 
 @app.get("/chats/{chat_id}/messages", response_model=List[MessageRead])
 def list_messages(
-    chat_id: int,
-    session: Session = Depends(get_session),
+        chat_id: int,
+        session: Session = Depends(get_session),
 ):
     chat = session.get(Chat, chat_id)
     if not chat:
@@ -292,11 +318,10 @@ def list_messages(
 
 @app.get("/chats/{chat_id}/search")
 def search_chat_messages(
-    chat_id: int,
-    query: str,
-    n_results: int = 5,
+        chat_id: int,
+        query: str,
+        n_results: int = 5,
 ):
-
     try:
         results = message_store.search_in_chat(chat_id, query, n_results)
         return {
@@ -313,10 +338,9 @@ def search_chat_messages(
 
 @app.get("/search")
 def global_search(
-    query: str,
-    n_results: int = 10,
+        query: str,
+        n_results: int = 10,
 ):
-
     try:
         results = message_store.search_all_chats(query, n_results)
         return {
@@ -363,7 +387,6 @@ async def chat_socket(websocket: WebSocket, chat_id: int) -> None:
                 session.refresh(message)
                 outbound = MessageRead.model_validate(message).model_dump()
 
-                # Add message to vector store
                 try:
                     await message_store.add_message(
                         chat_id=chat_id,
@@ -373,9 +396,6 @@ async def chat_socket(websocket: WebSocket, chat_id: int) -> None:
                         message_id=message.id,
                     )
                 except Exception as e:
-                    # Log error but don't fail the connection
-                    import logging
-
                     logging.error(f"Error adding message to vector store: {e}")
 
             await manager.broadcast(chat_id, outbound)
