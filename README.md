@@ -21,7 +21,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Start the server (Running at: http://localhost:8000)
-uvicorn main:app --reload
+uvicorn main:app --reload --host 0.0.0.0
 
 # ----------------------------------------------------
 # ⚛️ TERMINAL 2: FRONTEND (React + pnpm)
